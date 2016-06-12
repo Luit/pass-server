@@ -186,7 +186,10 @@ func armorSecrets(store string, target string, secrets ...string) error {
 		if err != nil {
 			return err
 		}
-		io.Copy(w, input)
+		_, err = io.Copy(w, input)
+		if err != nil {
+			return err
+		}
 		err = w.Close()
 		if err != nil {
 			return err
@@ -223,10 +226,7 @@ func writeIndex(target string, el openpgp.EntityList, index io.Reader) error {
 		return err
 	}
 	err = ioutil.WriteFile(path.Join(target, "index.asc"), b.Bytes(), 0600)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 func normalize(s string) string {

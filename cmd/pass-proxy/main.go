@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"mime"
@@ -31,9 +32,10 @@ func main() {
 
 	_ = fs.Parse(os.Args[1:])
 
-	http.ListenAndServe(socket, &passProxy{
+	fmt.Println(http.ListenAndServe(socket, &passProxy{
 		target: target,
-	})
+	}))
+	os.Exit(1)
 }
 
 type passProxy struct {
@@ -41,30 +43,11 @@ type passProxy struct {
 }
 
 func (p *passProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch {
-	case strings.HasPrefix(r.URL.Path, "/secret/"):
-	case strings.HasPrefix(r.URL.Path, "/secrets/"):
-	case r.URL.Path == "/secret":
-	case r.URL.Path == "/secrets":
-	default:
-		http.NotFound(w, r)
-		return
-	}
-	if r.Method != "POST" {
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if mediaType != "application/json" {
-		http.Error(w, "bad content type", http.StatusBadRequest)
+	if p.filterBad(w, r) {
 		return
 	}
 	body := &bytes.Buffer{}
-	_, err = io.Copy(body, r.Body)
+	_, err := io.Copy(body, r.Body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -81,7 +64,7 @@ func (p *passProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (p *passProxy) secret(w http.ResponseWriter, r *http.Request, body *bytes.Buffer) {
+func (p *passProxy) secret(w http.ResponseWriter, r *http.Request, body io.Reader) {
 	d := json.NewDecoder(body)
 	var v struct {
 		Path     string `json:"path"`
@@ -126,4 +109,30 @@ func (p *passProxy) get(w http.ResponseWriter, r *http.Request, secret string) {
 	w.Header().Set("Content-Type", "application/json")
 	e := json.NewEncoder(w)
 	_ = e.Encode(v)
+}
+
+func (p *passProxy) filterBad(w http.ResponseWriter, r *http.Request) bool {
+	switch {
+	case strings.HasPrefix(r.URL.Path, "/secret/"):
+	case strings.HasPrefix(r.URL.Path, "/secrets/"):
+	case r.URL.Path == "/secret":
+	case r.URL.Path == "/secrets":
+	default:
+		http.NotFound(w, r)
+		return true
+	}
+	if r.Method != "POST" {
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return true
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return true
+	}
+	if mediaType != "application/json" {
+		http.Error(w, "bad content type", http.StatusBadRequest)
+		return true
+	}
+	return false
 }
