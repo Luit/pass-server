@@ -19,6 +19,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -67,17 +68,24 @@ func (p *passProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (p *passProxy) secret(w http.ResponseWriter, r *http.Request, body io.Reader) {
 	d := json.NewDecoder(body)
 	var v struct {
-		Path     string `json:"path"`
-		Username string `json:"username"`
+		Path     string      `json:"path"`
+		Username interface{} `json:"username"`
 	}
 	err := d.Decode(&v)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	p.get(w, r, v.Path+"/"+v.Username+".asc")
+	switch username := v.Username.(type) {
+	case string:
+		p.get(w, r, v.Path+"/"+username+".asc")
+	case float64:
+		p.get(w, r, v.Path+"/"+strconv.FormatFloat(username, 'f', -1, 64)+".asc")
+	default:
+		http.Error(w, "unexpected type for username", http.StatusBadRequest)
+		return
+	}
 }
-
 func (p *passProxy) get(w http.ResponseWriter, r *http.Request, secret string) {
 	res, err := http.Get(p.target + secret)
 	if err != nil {
